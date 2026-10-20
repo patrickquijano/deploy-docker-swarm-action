@@ -66,6 +66,8 @@ jobs:
       - name: Assert only the selected service is deployed
         run: |
           test "$(docker stack services test-subset --format '{{.Name}}')" = "test-subset_web"
+          net=$(docker network inspect test-subset_default --format '{{.Id}}')
+          docker service inspect test-subset_web --format '{{range .Spec.TaskTemplate.Networks}}{{.Target}} {{end}}' | grep -q "$net"
       - name: Reject prune combined with services
         id: neg-prune
         continue-on-error: true
@@ -78,6 +80,19 @@ jobs:
           compose-file: tests/fixtures/compose.yaml
           services: web
           prune: "true"
+      - name: Write an env file with a reserved key
+        run: echo 'DOCKER_HOST=tcp://example.invalid:2375' > "$RUNNER_TEMP/reserved.env"
+      - name: Reject a reserved env-file key
+        id: neg-reserved
+        continue-on-error: true
+        uses: ./
+        with:
+          docker-host: ssh://runner@localhost
+          ssh-private-key: ${{ steps.prepare.outputs.key }}
+          ssh-known-hosts: ${{ steps.prepare.outputs.known-hosts }}
+          stack-name: test-neg-reserved
+          compose-file: tests/fixtures/compose.yaml
+          env-file: ${{ runner.temp }}/reserved.env
       - name: Fail on a wrong known_hosts before deploying
         id: neg-hosts
         continue-on-error: true
@@ -92,9 +107,11 @@ jobs:
       - name: Assert the negative cases failed cleanly
         env:
           NEG_PRUNE: ${{ steps.neg-prune.outcome }}
+          NEG_RESERVED: ${{ steps.neg-reserved.outcome }}
           NEG_HOSTS: ${{ steps.neg-hosts.outcome }}
         run: |
           test "$NEG_PRUNE" = failure
+          test "$NEG_RESERVED" = failure
           test "$NEG_HOSTS" = failure
           test -z "$(docker stack ls --format '{{.Name}}' | grep '^test-neg' || true)"
           test -z "$(docker context ls --format '{{.Name}}' | grep '^deploy-swarm-' || true)"

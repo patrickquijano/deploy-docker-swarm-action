@@ -167,6 +167,11 @@ runs:
             case $key in
             "" | [!A-Za-z_]* | *[!A-Za-z0-9_]*) fail "$env_file:$n: invalid variable name '$key'" ;;
             esac
+            case $key in
+            PATH | IFS | HOME | LD_* | DOCKER_* | SWARM_* | GITHUB_* | RUNNER_* | INPUT_*)
+              fail "$env_file:$n: reserved variable name '$key'"
+              ;;
+            esac
             case $value in
             \"*\" | \'*\')
               value=${value#?}
@@ -313,9 +318,11 @@ runs:
 
         echo "::group::Deploy stack $stack"
         if [ $# -gt 0 ]; then
-          rendered=$(docker compose -f "$compose_file" config "$@") ||
+          # -p names networks and volumes <stack>_<name> like a full deploy. The top-level
+          # `name:` key that compose adds is not valid in a stack file, so drop it.
+          rendered=$(docker compose -p "$stack" -f "$compose_file" config "$@") ||
             fail "cannot render services ($*) from '$compose_file'"
-          printf '%s\n' "$rendered" | docker stack deploy -c - --detach=true --with-registry-auth ${prune_flag:+"$prune_flag"} "$stack" ||
+          printf '%s\n' "$rendered" | sed '/^name:/d' | docker stack deploy -c - --detach=true --with-registry-auth ${prune_flag:+"$prune_flag"} "$stack" ||
             fail "cannot deploy stack $stack"
         else
           docker stack deploy -c "$compose_file" --detach=true --with-registry-auth ${prune_flag:+"$prune_flag"} "$stack" ||

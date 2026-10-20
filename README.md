@@ -121,22 +121,22 @@ The `_job-*` files are reusable workflows that `ci.yaml` and `release.yaml` call
 
 The action is configured through these inputs, set with `with:`.
 
-| Input                 | Required | Default        | Description                                                                                                    |
-| --------------------- | -------- | -------------- | -------------------------------------------------------------------------------------------------------------- |
-| `docker-host`         | yes      |                | `ssh://user@host[:port]`, `tcp://…` or `unix://…`. `tcp://` and `unix://` are passed through as-is.            |
-| `ssh-private-key`     | no       |                | Private key for `ssh://` hosts. Masked, written with mode 0600 to a per-run directory.                         |
-| `ssh-known-hosts`     | ssh only |                | known_hosts lines for the manager. Required for `ssh://`; host key checking is always on.                      |
-| `ssh-proxy-command`   | no       |                | SSH `ProxyCommand`, for example `cloudflared access ssh --hostname %h`.                                        |
-| `ssh-connect-timeout` | no       | `30`           | SSH `ConnectTimeout` in seconds.                                                                               |
-| `stack-name`          | yes      |                | Stack name, matching `^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`.                                                           |
-| `compose-file`        | no       | `compose.yaml` | Path to the Compose file. Must exist.                                                                          |
-| `env-file`            | no       |                | `KEY=VALUE` lines exported before the deploy. `#` comments and blank lines are skipped. Parsed, never sourced. |
-| `services`            | no       |                | Whitespace or comma separated services to deploy. Each must exist in the Compose file.                         |
-| `prune`               | no       | `false`        | `true` removes stack services that are no longer in the file. Rejected together with `services`.               |
-| `registry`            | no       |                | Registry to log in to. Empty means Docker Hub.                                                                 |
-| `registry-username`   | no       |                | Login runs only when username and password are both set; one without the other is an error.                    |
-| `registry-password`   | no       |                | Password or token. Masked and passed with `--password-stdin`.                                                  |
-| `keep-images`         | no       | `3`            | Non-negative integer. Empty skips the image cleanup.                                                           |
+| Input                 | Required | Default        | Description                                                                                                                                                                                                                          |
+| --------------------- | -------- | -------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `docker-host`         | yes      |                | `ssh://user@host[:port]`, `tcp://…` or `unix://…`. `tcp://` and `unix://` are passed through as-is.                                                                                                                                  |
+| `ssh-private-key`     | no       |                | Private key for `ssh://` hosts. Masked, written with mode 0600 to a per-run directory.                                                                                                                                               |
+| `ssh-known-hosts`     | ssh only |                | known_hosts lines for the manager. Required for `ssh://`; host key checking is always on.                                                                                                                                            |
+| `ssh-proxy-command`   | no       |                | SSH `ProxyCommand`, for example `cloudflared access ssh --hostname %h`.                                                                                                                                                              |
+| `ssh-connect-timeout` | no       | `30`           | SSH `ConnectTimeout` in seconds.                                                                                                                                                                                                     |
+| `stack-name`          | yes      |                | Stack name, matching `^[a-zA-Z0-9][a-zA-Z0-9_.-]*$`.                                                                                                                                                                                 |
+| `compose-file`        | no       | `compose.yaml` | Path to the Compose file. Must exist.                                                                                                                                                                                                |
+| `env-file`            | no       |                | `KEY=VALUE` lines exported before the deploy. `#` comments and blank lines are skipped. Parsed, never sourced. Reserved names are rejected: `PATH`, `IFS`, `HOME`, `LD_*`, `DOCKER_*`, `SWARM_*`, `GITHUB_*`, `RUNNER_*`, `INPUT_*`. |
+| `services`            | no       |                | Whitespace or comma separated services to deploy. Each must exist in the Compose file.                                                                                                                                               |
+| `prune`               | no       | `false`        | `true` removes stack services that are no longer in the file. Rejected together with `services`.                                                                                                                                     |
+| `registry`            | no       |                | Registry to log in to. Empty means Docker Hub.                                                                                                                                                                                       |
+| `registry-username`   | no       |                | Login runs only when username and password are both set; one without the other is an error.                                                                                                                                          |
+| `registry-password`   | no       |                | Password or token. Masked and passed with `--password-stdin`.                                                                                                                                                                        |
+| `keep-images`         | no       | `3`            | Non-negative integer. Empty skips the image cleanup.                                                                                                                                                                                 |
 
 The action has no outputs.
 
