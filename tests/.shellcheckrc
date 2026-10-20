@@ -1,0 +1,4 @@
+external-sources=true
+source-path=SCRIPTDIR
+# Each bats @test runs in its own subshell; per-test exports are intentional.
+disable=SC2030,SC2031

@@ -1,0 +1,6 @@
+---
+services:
+  web:
+    image: traefik/whoami:${WHOAMI_TAG:-v1.10.4}
+  api:
+    image: ghcr.io/traefik/whoami:v1.10.4
