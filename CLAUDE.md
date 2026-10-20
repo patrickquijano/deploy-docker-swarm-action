@@ -9,7 +9,8 @@ A composite GitHub Action that deploys a Compose file as a Docker Swarm stack ov
 Layout:
 
 - `action.yaml`: the public contract (inputs, outputs, composite steps).
-- `tests/check-release.bats`: bats test for the release workflow step. Fixtures live in `tests/fixtures/`; `_job-self-test.yaml` uses them too.
+- `tests/check-release.bats`: bats test for the release workflow step.
+- `tests/setup.bats`: bats tests for the `setup` and `teardown` steps of `action.yaml`, extracted with `yq`; holds the negative cases. Fixtures live in `tests/fixtures/`; `_job-self-test.yaml` uses them too.
 - `.github/workflows/ci.yaml`: runs on `pull_request` and on `push` to main, and calls `_job-lint.yaml` and `_job-self-test.yaml`.
 - `.github/workflows/_job-*.yaml`: one call-only job per file (`on: workflow_call`).
   - `_job-lint.yaml`: `actionlint`, `shellcheck`, `shfmt` and `bats`.
@@ -30,7 +31,7 @@ Later steps trust `setup` and keep only their docker calls. Each defines at most
 - `shellcheck tests/*.bats tests/helpers.bash`: lint the test shell code. CI does not lint the inline step code.
 - `shfmt -d tests`: check shell formatting.
 - `yamllint --strict action.yaml .github tests/fixtures`: lint YAML (config in `.yamllint.yaml`, aligned with the repo formatter).
-- `bats tests/`: run the release-step tests (install with `brew install bats-core`).
+- `bats tests/`: run the release-step and setup-step tests (install with `brew install bats-core`).
 - `act pull_request -W .github/workflows/ci.yaml -j lint`: run the lint job locally. On Colima or another Docker context, prefix `DOCKER_HOST="$(docker context inspect -f '{{.Endpoints.docker.Host}}')"`.
 
 ## Precedence
