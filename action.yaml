@@ -1,5 +1,5 @@
 ---
-name: Deploy Docker Swarm stack
+name: Deploy Docker Swarm Action
 description: >-
   Deploy a Compose file as a Docker Swarm stack over SSH, tcp or unix, with optional registry login and image cleanup.
 author: patrickquijano

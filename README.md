@@ -1,4 +1,4 @@
-# deploy-docker-swarm-action
+# Deploy Docker Swarm Action
 
 Deploy a Compose file as a Docker Swarm stack over SSH from a GitHub Actions workflow.
 

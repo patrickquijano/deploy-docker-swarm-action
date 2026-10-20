@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.1] - 2026-10-20
+
+### Changed
+
+- Rename the action's display name from `Deploy Docker Swarm stack` to `Deploy Docker Swarm Action`, as shown on GitHub Marketplace and in workflow run logs. The `uses:` path is unchanged.
+
 ## [0.1.0] - 2026-10-20
 
 ### Added
@@ -22,5 +28,6 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Teardown that always removes the temporary Docker context and the per-run directory.
 - MIT license.
 
-[unreleased]: https://github.com/patrickquijano/deploy-docker-swarm-action/compare/v0.1.0...HEAD
+[unreleased]: https://github.com/patrickquijano/deploy-docker-swarm-action/compare/v0.1.1...HEAD
+[0.1.1]: https://github.com/patrickquijano/deploy-docker-swarm-action/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/patrickquijano/deploy-docker-swarm-action/releases/tag/v0.1.0
