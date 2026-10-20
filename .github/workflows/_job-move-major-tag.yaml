@@ -1,0 +1,35 @@
+---
+name: job-move-major-tag
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Published release tag, `vX.Y.Z`.
+        required: true
+        type: string
+      major:
+        description: Major tag to move, `vN`.
+        required: true
+        type: string
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: sh
+jobs:
+  major-tag:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Move the major tag
+        run: |
+          git tag -f "$MAJOR" "$TAG^{commit}"
+          git push -f origin "refs/tags/$MAJOR"
+        env:
+          MAJOR: ${{ inputs.major }}
+          TAG: ${{ inputs.tag }}

@@ -1,0 +1,81 @@
+---
+name: job-marketplace-readiness
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to check, `vX.Y.Z`.
+        required: true
+        type: string
+    outputs:
+      major:
+        description: Major tag of the release, `vN`.
+        value: ${{ jobs.check.outputs.major }}
+      notes:
+        description: CHANGELOG section of the released version.
+        value: ${{ jobs.check.outputs.notes }}
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: sh
+jobs:
+  check:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    outputs:
+      major: ${{ steps.check.outputs.major }}
+      notes: ${{ steps.check.outputs.notes }}
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Check Marketplace readiness
+        id: check
+        run: |
+          fail() {
+            printf '::error::%s\n' "$*"
+            exit 1
+          }
+
+          branch=${RELEASE_BRANCH:-origin/main}
+
+          printf '%s\n' "$RELEASE_TAG" | grep -Eq '^v[0-9]+\.[0-9]+\.[0-9]+$' ||
+            fail "tag '$RELEASE_TAG' is not vX.Y.Z"
+          major=${RELEASE_TAG%%.*}
+          version=${RELEASE_TAG#v}
+
+          git merge-base --is-ancestor "$RELEASE_TAG^{commit}" "$branch" ||
+            fail "tag '$RELEASE_TAG' is not on $branch"
+
+          [ -f action.yaml ] || fail "action.yaml is missing from the repository root"
+          [ ! -e action.yml ] || fail "action.yml next to action.yaml is ambiguous; keep one"
+          for key in name description author branding; do
+            grep -q "^$key:" action.yaml || fail "action.yaml has no top-level '$key:'"
+          done
+          for key in icon color; do
+            grep -q "^  $key:" action.yaml || fail "action.yaml branding has no '$key:'"
+          done
+
+          [ -f CHANGELOG.md ] || fail "CHANGELOG.md is missing"
+          # The section body runs from the version heading to the next heading or link reference.
+          notes=$(awk -v v="$version" '
+            index($0, "## [" v "]") == 1 { on = 1; next }
+            on && (/^## / || /^\[[^]]+\]: /) { exit }
+            on { print }
+          ' CHANGELOG.md)
+          case $notes in
+          *[![:space:]]*) ;;
+          *) fail "CHANGELOG.md has no non-empty '## [$version]' section" ;;
+          esac
+          # Trim leading blank lines; the command substitution already trimmed trailing ones.
+          notes=$(printf '%s\n' "$notes" | sed -e '/./,$!d')
+
+          delimiter=NOTES_EOF_$(od -An -N8 -tx1 /dev/urandom | tr -d ' \n')
+          {
+            printf 'major=%s\n' "$major"
+            printf 'notes<<%s\n%s\n%s\n' "$delimiter" "$notes" "$delimiter"
+          } >>"$GITHUB_OUTPUT"
+          echo "::notice::$RELEASE_TAG is ready for Marketplace"
+        env:
+          RELEASE_TAG: ${{ inputs.tag }}

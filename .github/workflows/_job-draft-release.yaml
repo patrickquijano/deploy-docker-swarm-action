@@ -1,0 +1,39 @@
+---
+name: job-draft-release
+on:
+  workflow_call:
+    inputs:
+      tag:
+        description: Release tag to draft, `vX.Y.Z`.
+        required: true
+        type: string
+      notes:
+        description: Release notes.
+        required: true
+        type: string
+permissions:
+  contents: read
+defaults:
+  run:
+    shell: sh
+jobs:
+  draft:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Create draft release
+        run: gh release create "$TAG" --draft --verify-tag --title "$TAG" --notes "$NOTES"
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ inputs.tag }}
+          NOTES: ${{ inputs.notes }}
+      - name: Tell the maintainer what is next
+        run: |
+          msg="Draft release $TAG created. Publish it from the Releases page with 'Publish this Action to the GitHub Marketplace' ticked."
+          echo "::notice::$msg"
+          echo "$msg" >>"$GITHUB_STEP_SUMMARY"
+        env:
+          TAG: ${{ inputs.tag }}

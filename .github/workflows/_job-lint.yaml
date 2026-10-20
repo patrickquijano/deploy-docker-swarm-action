@@ -1,0 +1,32 @@
+---
+name: job-lint
+on:
+  workflow_call:
+permissions:
+  contents: read
+env:
+  HUSKY: "0"
+defaults:
+  run:
+    shell: sh
+jobs:
+  lint:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y bats shellcheck
+          curl -fsSL -o shfmt https://github.com/mvdan/sh/releases/download/v3.14.1/shfmt_v3.14.1_linux_amd64
+          echo "76e77641faa025814b77f153b29796b8e6fa2fca03e0c76a691608b86c7ea7bf  shfmt" | sha256sum -c -
+          sudo install -m 755 shfmt /usr/local/bin/shfmt
+          curl -fsSL -o actionlint.tar.gz https://github.com/rhysd/actionlint/releases/download/v1.7.12/actionlint_1.7.12_linux_amd64.tar.gz
+          echo "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8  actionlint.tar.gz" | sha256sum -c -
+          tar -xzf actionlint.tar.gz actionlint
+          sudo install -m 755 actionlint /usr/local/bin/actionlint
+      - run: actionlint
+      - run: shellcheck tests/*.bats tests/helpers.bash
+      - run: shfmt -d tests
+      - run: bats tests/

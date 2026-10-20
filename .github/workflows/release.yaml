@@ -1,0 +1,42 @@
+---
+name: release
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+"]
+  release:
+    types: [published]
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  lint:
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/_job-lint.yaml
+  test:
+    if: github.event_name == 'push'
+    uses: ./.github/workflows/_job-self-test.yaml
+  marketplace:
+    if: github.event_name == 'push' || !github.event.release.prerelease
+    uses: ./.github/workflows/_job-marketplace-readiness.yaml
+    with:
+      tag: ${{ github.event_name == 'push' && github.ref_name || github.event.release.tag_name }}
+  draft:
+    if: github.event_name == 'push'
+    needs: [lint, test, marketplace]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/_job-draft-release.yaml
+    with:
+      tag: ${{ github.ref_name }}
+      notes: ${{ needs.marketplace.outputs.notes }}
+  major-tag:
+    if: github.event_name == 'release' && !github.event.release.prerelease
+    needs: [marketplace]
+    permissions:
+      contents: write
+    uses: ./.github/workflows/_job-move-major-tag.yaml
+    with:
+      tag: ${{ github.event.release.tag_name }}
+      major: ${{ needs.marketplace.outputs.major }}

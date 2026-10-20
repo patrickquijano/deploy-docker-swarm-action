@@ -1,0 +1,104 @@
+---
+name: job-self-test
+on:
+  workflow_call:
+permissions:
+  contents: read
+env:
+  HUSKY: "0"
+defaults:
+  run:
+    shell: sh
+jobs:
+  self-test:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v7.0.1
+      - name: Prepare sshd, a throwaway key and a swarm
+        id: prepare
+        run: |
+          sudo systemctl start ssh
+          ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/id_test"
+          ssh-keygen -q -t ed25519 -N '' -f "$RUNNER_TEMP/id_other"
+          mkdir -p ~/.ssh
+          cat "$RUNNER_TEMP/id_test.pub" >> ~/.ssh/authorized_keys
+          chmod 600 ~/.ssh/authorized_keys
+          {
+            echo "key<<KEY_EOF"
+            cat "$RUNNER_TEMP/id_test"
+            echo "KEY_EOF"
+            echo "known-hosts<<KH_EOF"
+            ssh-keyscan localhost 2>/dev/null
+            echo "KH_EOF"
+            echo "wrong-known-hosts<<WKH_EOF"
+            echo "localhost $(cut -d' ' -f1,2 "$RUNNER_TEMP/id_other.pub")"
+            echo "WKH_EOF"
+          } >> "$GITHUB_OUTPUT"
+          docker swarm init
+      - name: Deploy the whole file
+        uses: ./
+        with:
+          docker-host: ssh://runner@localhost
+          ssh-private-key: ${{ steps.prepare.outputs.key }}
+          ssh-known-hosts: ${{ steps.prepare.outputs.known-hosts }}
+          ssh-connect-timeout: "10"
+          stack-name: test-full
+          compose-file: tests/fixtures/compose.yaml
+          env-file: tests/fixtures/test.env
+          keep-images: "3"
+      - name: Assert the whole stack is deployed
+        run: |
+          services=$(docker stack services test-full --format '{{.Name}}' | sort | tr '\n' ' ')
+          test "$services" = "test-full_api test-full_web "
+          image='{{.Spec.TaskTemplate.ContainerSpec.Image}}'
+          docker service inspect test-full_web --format "$image" | grep -q 'whoami:v1.10.3'
+      - name: Deploy a service subset
+        uses: ./
+        with:
+          docker-host: ssh://runner@localhost
+          ssh-private-key: ${{ steps.prepare.outputs.key }}
+          ssh-known-hosts: ${{ steps.prepare.outputs.known-hosts }}
+          stack-name: test-subset
+          compose-file: tests/fixtures/compose.yaml
+          services: web
+          keep-images: ""
+      - name: Assert only the selected service is deployed
+        run: |
+          test "$(docker stack services test-subset --format '{{.Name}}')" = "test-subset_web"
+      - name: Reject prune combined with services
+        id: neg-prune
+        continue-on-error: true
+        uses: ./
+        with:
+          docker-host: ssh://runner@localhost
+          ssh-private-key: ${{ steps.prepare.outputs.key }}
+          ssh-known-hosts: ${{ steps.prepare.outputs.known-hosts }}
+          stack-name: test-neg-prune
+          compose-file: tests/fixtures/compose.yaml
+          services: web
+          prune: "true"
+      - name: Fail on a wrong known_hosts before deploying
+        id: neg-hosts
+        continue-on-error: true
+        uses: ./
+        with:
+          docker-host: ssh://runner@localhost
+          ssh-private-key: ${{ steps.prepare.outputs.key }}
+          ssh-known-hosts: ${{ steps.prepare.outputs.wrong-known-hosts }}
+          ssh-connect-timeout: "10"
+          stack-name: test-neg-hosts
+          compose-file: tests/fixtures/compose.yaml
+      - name: Assert the negative cases failed cleanly
+        env:
+          NEG_PRUNE: ${{ steps.neg-prune.outcome }}
+          NEG_HOSTS: ${{ steps.neg-hosts.outcome }}
+        run: |
+          test "$NEG_PRUNE" = failure
+          test "$NEG_HOSTS" = failure
+          test -z "$(docker stack ls --format '{{.Name}}' | grep '^test-neg' || true)"
+          test -z "$(docker context ls --format '{{.Name}}' | grep '^deploy-swarm-' || true)"
+          test -z "$(find "$RUNNER_TEMP" -maxdepth 1 -name 'deploy-swarm.*')"
+      - name: Remove the test stacks
+        if: always()
+        run: docker stack rm test-full test-subset || true

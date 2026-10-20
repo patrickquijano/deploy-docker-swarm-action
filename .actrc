@@ -1,0 +1,6 @@
+# amd64: the lint job downloads linux_amd64 builds of shfmt and actionlint.
+# daemon socket off: keeps the self-test from running docker swarm init on the host.
+-P ubuntu-24.04=catthehacker/ubuntu:act-24.04
+--container-architecture=linux/amd64
+--container-daemon-socket=-
+--action-offline-mode

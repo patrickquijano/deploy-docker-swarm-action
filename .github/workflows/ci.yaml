@@ -1,0 +1,16 @@
+---
+name: ci
+on:
+  pull_request:
+  push:
+    branches: [main]
+permissions:
+  contents: read
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  lint:
+    uses: ./.github/workflows/_job-lint.yaml
+  self-test:
+    uses: ./.github/workflows/_job-self-test.yaml
