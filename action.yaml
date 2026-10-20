@@ -233,8 +233,9 @@ runs:
         echo "::endgroup::"
 
         echo "::group::Verify Swarm manager"
-        is_manager=$(docker --context "$context" info --format '{{.Swarm.ControlAvailable}}') ||
+        docker --context "$context" version --format '{{.Server.Version}}' >/dev/null ||
           fail "cannot reach the Docker host"
+        is_manager=$(docker --context "$context" info --format '{{.Swarm.ControlAvailable}}')
         [ "$is_manager" = true ] || fail "the Docker host is not a Swarm manager node"
         echo "::notice::Connected to a Swarm manager"
         echo "::endgroup::"
