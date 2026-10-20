@@ -6,7 +6,7 @@ It is a composite GitHub Action that runs against a remote Swarm manager, so a w
 
 It creates a temporary Docker context to the manager over SSH (optionally through a Cloudflare Tunnel), `tcp://` or `unix://`. Through that context it logs in to a registry if configured, runs `docker stack deploy`, keeps the newest N images of the stack's repositories, logs out and removes the context.
 
-> **Status:** pre-release. No version is tagged yet, so the `@v1` references below resolve only once `v1` is published, and the interface may still change.
+> **Status:** pre-release. The latest version is 0.2.0 and its major tag is `v0`, so the `@v1` references below resolve only once `v1` is published, and the interface may still change.
 
 ## Contents
 
@@ -116,6 +116,7 @@ The `_job-*` files are reusable workflows that `ci.yaml` and `release.yaml` call
 | `.github/workflows/_job-draft-release.yaml`         | Creates the draft GitHub release.                                                                          |
 | `.github/workflows/_job-move-major-tag.yaml`        | Moves the major tag (for example `v1`) to the published release.                                           |
 | `tests/check-release.bats`                          | Bats tests for the Marketplace readiness step, with fixtures in `tests/fixtures/`.                         |
+| `tests/setup.bats`                                  | Bats tests for the `setup` and `teardown` steps, including the negative cases.                             |
 
 ## Configuration
 
@@ -195,7 +196,7 @@ Commits follow Conventional Commits and are signed; the `commit-msg` hook enforc
 
 ## Support
 
-Open an issue at [github.com/patrickquijano/deploy-docker-swarm-action/issues](https://github.com/patrickquijano/deploy-docker-swarm-action/issues).
+Open an issue at [github.com/patrickquijano/deploy-docker-swarm-action/issues](https://github.com/patrickquijano/deploy-docker-swarm-action/issues). Report vulnerabilities privately as described in [SECURITY.md](SECURITY.md).
 
 ## License
 
