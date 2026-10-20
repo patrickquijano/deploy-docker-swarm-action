@@ -7,6 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-10-20
+
+### Changed
+
+- README now states that `logout` runs after a successful login even when a later step fails, and that `teardown` always runs.
+- Development tooling: pin `katex` to `^0.19.0` and `smol-toml` to `^1.9.1` through npm `overrides`, and refresh `package-lock.json` (`katex` 0.19.0, `smol-toml` 1.9.1, `commander` 15.0.0). These are dev dependencies of the Markdown lint and format checks and do not affect the action.
+
 ## [0.2.0] - 2026-10-20
 
 ### Added
@@ -38,7 +45,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Teardown that always removes the temporary Docker context and the per-run directory.
 - MIT license.
 
-[unreleased]: https://github.com/patrickquijano/deploy-docker-swarm-action/compare/v0.2.0...HEAD
+[unreleased]: https://github.com/patrickquijano/deploy-docker-swarm-action/compare/v0.2.1...HEAD
+[0.2.1]: https://github.com/patrickquijano/deploy-docker-swarm-action/compare/v0.2.0...v0.2.1
 [0.2.0]: https://github.com/patrickquijano/deploy-docker-swarm-action/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/patrickquijano/deploy-docker-swarm-action/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/patrickquijano/deploy-docker-swarm-action/releases/tag/v0.1.0
