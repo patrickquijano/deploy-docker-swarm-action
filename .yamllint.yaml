@@ -1,0 +1,11 @@
+---
+extends: default
+rules:
+  # The repo formatter uses one space before comments.
+  comments:
+    min-spaces-from-content: 1
+  line-length: disable
+  truthy:
+    check-keys: false
+ignore: |
+  node_modules/

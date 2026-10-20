@@ -1,0 +1,7 @@
+---
+formatter:
+  include_document_start: true
+  # Match yamllint comments.min-spaces-from-content.
+  pad_line_comments: 1
+exclude:
+  - node_modules

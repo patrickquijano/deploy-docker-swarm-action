@@ -1,0 +1,47 @@
+# Secrets
+.env
+.env.*
+!.env.example
+!.env.sample
+!.env.template
+
+# Logs
+*.log
+
+# OS
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Editors
+.idea/
+.vscode/*
+*.swp
+*~
+
+# Claude Code
+.claude/settings.local.json
+.claude/prompts/
+.claude/worktrees/
+CLAUDE.local.md
+
+# act (local workflow runs)
+.secrets
+
+# Security scan reports
+.vulnerability-reports/
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+.pnpm-store/
+coverage/
+
+# Husky
+.husky/_/
+
+# graphify
+graphify-out/
