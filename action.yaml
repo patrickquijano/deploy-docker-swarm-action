@@ -1,0 +1,474 @@
+---
+name: Deploy Docker Swarm stack
+description: >-
+  Deploy a Compose file as a Docker Swarm stack over SSH, tcp or unix, with optional registry login and image cleanup.
+author: patrickquijano
+branding:
+  icon: upload-cloud
+  color: blue
+inputs:
+  docker-host:
+    description: Swarm manager endpoint, `ssh://user@host[:port]`, `tcp://...` or `unix://...`.
+    required: true
+  ssh-private-key:
+    description: SSH private key for `ssh://` hosts.
+    required: false
+  ssh-known-hosts:
+    description: known_hosts lines for the manager. Required for `ssh://` hosts.
+    required: false
+  ssh-proxy-command:
+    description: SSH ProxyCommand, for example `cloudflared access ssh --hostname %h`.
+    required: false
+  ssh-connect-timeout:
+    description: SSH ConnectTimeout in seconds.
+    required: false
+    default: "30"
+  stack-name:
+    description: Name of the stack to deploy.
+    required: true
+  compose-file:
+    description: Path to the Compose file.
+    required: false
+    default: compose.yaml
+  env-file:
+    description: File of KEY=VALUE lines exported before the deploy. It is parsed, never sourced.
+    required: false
+  services:
+    description: Whitespace or comma separated services to deploy. Empty deploys the whole file.
+    required: false
+  prune:
+    description: >-
+      Remove stack services that are no longer in the Compose file (`true` or `false`). Cannot be combined with `services`.
+    required: false
+    default: "false"
+  registry:
+    description: Registry to log in to. Empty means Docker Hub.
+    required: false
+  registry-username:
+    description: Registry username. Login runs only when username and password are set.
+    required: false
+  registry-password:
+    description: Registry password or token.
+    required: false
+  keep-images:
+    description: Number of newest images to keep per repository of the stack. Empty skips the cleanup.
+    required: false
+    default: "3"
+runs:
+  using: composite
+  steps:
+    - id: setup
+      shell: sh
+      run: |
+        set -eu
+        set -f
+        fail() {
+          echo "::error::$*"
+          exit 1
+        }
+        sq() { printf "'%s'" "$(printf '%s' "$1" | sed "s/'/'\\\\''/g")"; }
+
+        host=${INPUT_DOCKER_HOST:-}
+        ssh_key=${INPUT_SSH_PRIVATE_KEY:-}
+        known_hosts=${INPUT_SSH_KNOWN_HOSTS:-}
+        proxy_command=${INPUT_SSH_PROXY_COMMAND:-}
+        connect_timeout=${INPUT_SSH_CONNECT_TIMEOUT:-30}
+        stack=${INPUT_STACK_NAME:-}
+        compose_file=${INPUT_COMPOSE_FILE:-compose.yaml}
+        env_file=${INPUT_ENV_FILE:-}
+        services=${INPUT_SERVICES:-}
+        prune=${INPUT_PRUNE:-false}
+        registry_username=${INPUT_REGISTRY_USERNAME:-}
+        registry_password=${INPUT_REGISTRY_PASSWORD:-}
+        keep_images=${INPUT_KEEP_IMAGES-3}
+
+        # Mask first so no later message can leak a secret.
+        if [ -n "$ssh_key" ]; then
+          printf '%s\n' "$ssh_key" | while IFS= read -r line; do
+            case $line in
+            "" | -----*) ;;
+            *) printf '::add-mask::%s\n' "$line" ;;
+            esac
+          done
+        fi
+        if [ -n "$registry_password" ]; then
+          printf '::add-mask::%s\n' "$registry_password"
+        fi
+
+        echo "::group::Validate inputs"
+        [ -n "$host" ] || fail "docker-host is required"
+        case $host in
+        ssh://* | tcp://* | unix://*) ;;
+        *) fail "docker-host must start with ssh://, tcp:// or unix://" ;;
+        esac
+        case $host in
+        *[[:space:],]*) fail "docker-host must not contain whitespace or commas" ;;
+        esac
+        case $stack in
+        [a-zA-Z0-9]*) ;;
+        *) fail "stack-name must match ^[a-zA-Z0-9][a-zA-Z0-9_.-]*\$" ;;
+        esac
+        case $stack in
+        *[!a-zA-Z0-9_.-]*) fail "stack-name must match ^[a-zA-Z0-9][a-zA-Z0-9_.-]*\$" ;;
+        esac
+        [ -f "$compose_file" ] || fail "compose-file '$compose_file' does not exist"
+        if [ -n "$env_file" ] && [ ! -f "$env_file" ]; then
+          fail "env-file '$env_file' does not exist"
+        fi
+        case $keep_images in
+        *[!0-9]*) fail "keep-images must be a non-negative integer" ;;
+        esac
+        [ "$prune" = true ] || [ "$prune" = false ] || fail "prune must be 'true' or 'false'"
+        if [ "$prune" = true ] && [ -n "$services" ]; then
+          fail "prune cannot be combined with services: it would remove the stack's other services"
+        fi
+        case $connect_timeout in
+        "" | *[!0-9]*) fail "ssh-connect-timeout must be a non-negative integer" ;;
+        esac
+        is_ssh=false
+        case $host in
+        ssh://*) is_ssh=true ;;
+        esac
+        if [ "$is_ssh" = true ]; then
+          [ -n "$known_hosts" ] || fail "ssh-known-hosts is required for ssh:// hosts"
+          newline=$(printf '\n.')
+          case $proxy_command in
+          *"${newline%.}"*) fail "ssh-proxy-command must be a single line" ;;
+          esac
+        fi
+        if { [ -n "$registry_username" ] && [ -z "$registry_password" ]; } || { [ -z "$registry_username" ] && [ -n "$registry_password" ]; }; then
+          fail "registry-username and registry-password must be set together"
+        fi
+
+        # Parse the env file, never source it: skip blanks and comments, strip `export `,
+        # validate the key, strip one pair of quotes. Each pair is exported for the
+        # compose check below and kept as a single-quoted `export` line for later steps.
+        env_lines=""
+        if [ -n "$env_file" ]; then
+          nl='
+        '
+          cr=$(printf '\r')
+          n=0
+          while IFS= read -r line || [ -n "$line" ]; do
+            n=$((n + 1))
+            line=${line%"$cr"}
+            line=${line#"${line%%[![:space:]]*}"}
+            line=${line%"${line##*[![:space:]]}"}
+            case $line in
+            "" | \#*) continue ;;
+            esac
+            line=${line#export }
+            case $line in
+            *=*) ;;
+            *) fail "$env_file:$n: expected KEY=VALUE" ;;
+            esac
+            key=${line%%=*}
+            value=${line#*=}
+            case $key in
+            "" | [!A-Za-z_]* | *[!A-Za-z0-9_]*) fail "$env_file:$n: invalid variable name '$key'" ;;
+            esac
+            case $value in
+            \"*\" | \'*\')
+              value=${value#?}
+              value=${value%?}
+              ;;
+            esac
+            export "$key=$value"
+            env_lines=$env_lines"export $key=$(sq "$value")$nl"
+          done <"$env_file"
+        fi
+        available=$(docker compose -f "$compose_file" config --services) ||
+          fail "compose-file '$compose_file' is not valid"
+        for service in $(printf '%s\n' "$services" | tr ',' ' '); do
+          printf '%s\n' "$available" | grep -Fxq -- "$service" || fail "service '$service' is not in $compose_file"
+        done
+        echo "::endgroup::"
+
+        echo "::group::Create Docker context"
+        work_dir=$(mktemp -d "$RUNNER_TEMP/deploy-swarm.XXXXXX")
+        printf 'work-dir=%s\n' "$work_dir" >>"$GITHUB_OUTPUT"
+        context="deploy-swarm-${GITHUB_RUN_ID:-0}-${GITHUB_RUN_ATTEMPT:-1}-${work_dir##*.}"
+        if [ -n "$env_lines" ]; then
+          (umask 077 && printf '%s' "$env_lines" >"$work_dir/env")
+        fi
+
+        if [ "$is_ssh" = true ]; then
+          real_ssh=$(command -v ssh) || fail "ssh is not installed"
+          mkdir "$work_dir/bin"
+          printf '%s\n' "$known_hosts" >"$work_dir/known_hosts"
+          {
+            printf '%s\n' "Host *"
+            printf '%s\n' "  IdentitiesOnly yes"
+            printf '%s\n' "  UserKnownHostsFile $work_dir/known_hosts"
+            printf '%s\n' "  StrictHostKeyChecking yes"
+            printf '%s\n' "  BatchMode yes"
+            printf '%s\n' "  ConnectTimeout $connect_timeout"
+          } >"$work_dir/ssh_config"
+          if [ -n "$ssh_key" ]; then
+            (umask 077 && printf '%s\n' "$ssh_key" >"$work_dir/id_key")
+            printf '%s\n' "  IdentityFile $work_dir/id_key" >>"$work_dir/ssh_config"
+          fi
+          if [ -n "$proxy_command" ]; then
+            printf '%s\n' "  ProxyCommand $proxy_command" >>"$work_dir/ssh_config"
+          fi
+          printf '#!/bin/sh\nexec %s -F %s "$@"\n' "$(sq "$real_ssh")" "$(sq "$work_dir/ssh_config")" >"$work_dir/bin/ssh"
+          chmod 700 "$work_dir/bin/ssh"
+          export PATH="$work_dir/bin:$PATH"
+        fi
+
+        proxy_state="unset"
+        key_state="unset"
+        [ -z "$proxy_command" ] || proxy_state="set"
+        [ -z "$ssh_key" ] || key_state="set"
+        echo "::debug::transport=${host%%://*} context=$context connect-timeout=$connect_timeout proxy-command=$proxy_state ssh-key=$key_state"
+        echo "::debug::services=${services:-all}"
+        docker context create "$context" --docker "host=$host" >/dev/null ||
+          fail "cannot create Docker context '$context'"
+        printf 'context=%s\n' "$context" >>"$GITHUB_OUTPUT"
+        echo "::endgroup::"
+
+        echo "::group::Verify Swarm manager"
+        is_manager=$(docker --context "$context" info --format '{{.Swarm.ControlAvailable}}') ||
+          fail "cannot reach the Docker host"
+        [ "$is_manager" = true ] || fail "the Docker host is not a Swarm manager node"
+        echo "::notice::Connected to a Swarm manager"
+        echo "::endgroup::"
+      env:
+        INPUT_DOCKER_HOST: ${{ inputs.docker-host }}
+        INPUT_SSH_PRIVATE_KEY: ${{ inputs.ssh-private-key }}
+        INPUT_SSH_KNOWN_HOSTS: ${{ inputs.ssh-known-hosts }}
+        INPUT_SSH_PROXY_COMMAND: ${{ inputs.ssh-proxy-command }}
+        INPUT_SSH_CONNECT_TIMEOUT: ${{ inputs.ssh-connect-timeout }}
+        INPUT_STACK_NAME: ${{ inputs.stack-name }}
+        INPUT_COMPOSE_FILE: ${{ inputs.compose-file }}
+        INPUT_ENV_FILE: ${{ inputs.env-file }}
+        INPUT_SERVICES: ${{ inputs.services }}
+        INPUT_PRUNE: ${{ inputs.prune }}
+        INPUT_REGISTRY_USERNAME: ${{ inputs.registry-username }}
+        INPUT_REGISTRY_PASSWORD: ${{ inputs.registry-password }}
+        INPUT_KEEP_IMAGES: ${{ inputs.keep-images }}
+    - id: login
+      if: inputs.registry-username != ''
+      shell: sh
+      run: |
+        set -eu
+        fail() {
+          echo "::error::$*"
+          exit 1
+        }
+        [ -n "${DOCKER_CONTEXT:-}" ] || fail "DOCKER_CONTEXT is not set"
+        export PATH="$SWARM_WORK_DIR/bin:$PATH"
+
+        registry=${INPUT_REGISTRY:-}
+        username=${INPUT_REGISTRY_USERNAME:-}
+        password=${INPUT_REGISTRY_PASSWORD:-}
+        [ -n "$username" ] && [ -n "$password" ] || fail "registry-username and registry-password are required"
+        printf '::add-mask::%s\n' "$password"
+
+        echo "::group::Log in to ${registry:-Docker Hub}"
+        if [ -n "$registry" ]; then
+          printf '%s' "$password" | docker login "$registry" -u "$username" --password-stdin ||
+            fail "cannot log in to $registry"
+        else
+          printf '%s' "$password" | docker login -u "$username" --password-stdin ||
+            fail "cannot log in to Docker Hub"
+        fi
+        echo "::endgroup::"
+      env:
+        DOCKER_CONTEXT: ${{ steps.setup.outputs.context }}
+        SWARM_WORK_DIR: ${{ steps.setup.outputs.work-dir }}
+        INPUT_REGISTRY: ${{ inputs.registry }}
+        INPUT_REGISTRY_USERNAME: ${{ inputs.registry-username }}
+        INPUT_REGISTRY_PASSWORD: ${{ inputs.registry-password }}
+    - id: deploy
+      shell: sh
+      run: |
+        set -eu
+        set -f
+        fail() {
+          echo "::error::$*"
+          exit 1
+        }
+        [ -n "${DOCKER_CONTEXT:-}" ] || fail "DOCKER_CONTEXT is not set"
+        export PATH="$SWARM_WORK_DIR/bin:$PATH"
+        # shellcheck disable=SC1091 # written by the setup step
+        [ ! -f "$SWARM_WORK_DIR/env" ] || . "$SWARM_WORK_DIR/env"
+
+        stack=${INPUT_STACK_NAME:-}
+        compose_file=${INPUT_COMPOSE_FILE:-compose.yaml}
+        services=${INPUT_SERVICES:-}
+        prune_flag=""
+        if [ "${INPUT_PRUNE:-false}" = true ]; then
+          prune_flag="--prune"
+        fi
+
+        # The selected services are the positional parameters.
+        # shellcheck disable=SC2046 # splitting on whitespace is the point; globbing is off
+        set -- $(printf '%s\n' "$services" | tr ',' ' ')
+
+        summary="all services"
+        if [ $# -gt 0 ]; then
+          summary="services: $*"
+        fi
+
+        echo "::group::Deploy stack $stack"
+        if [ $# -gt 0 ]; then
+          rendered=$(docker compose -f "$compose_file" config "$@") ||
+            fail "cannot render services ($*) from '$compose_file'"
+          printf '%s\n' "$rendered" | docker stack deploy -c - --detach=true --with-registry-auth ${prune_flag:+"$prune_flag"} "$stack" ||
+            fail "cannot deploy stack $stack"
+        else
+          docker stack deploy -c "$compose_file" --detach=true --with-registry-auth ${prune_flag:+"$prune_flag"} "$stack" ||
+            fail "cannot deploy stack $stack"
+        fi
+        echo "::endgroup::"
+        echo "::notice::Deployed stack $stack ($summary)"
+      env:
+        DOCKER_CONTEXT: ${{ steps.setup.outputs.context }}
+        SWARM_WORK_DIR: ${{ steps.setup.outputs.work-dir }}
+        INPUT_STACK_NAME: ${{ inputs.stack-name }}
+        INPUT_COMPOSE_FILE: ${{ inputs.compose-file }}
+        INPUT_ENV_FILE: ${{ inputs.env-file }}
+        INPUT_SERVICES: ${{ inputs.services }}
+        INPUT_PRUNE: ${{ inputs.prune }}
+    - id: cleanup-images
+      if: inputs.keep-images != ''
+      shell: sh
+      run: |
+        set -eu
+        set -f
+        fail() {
+          echo "::error::$*"
+          exit 1
+        }
+        [ -n "${DOCKER_CONTEXT:-}" ] || fail "DOCKER_CONTEXT is not set"
+        export PATH="$SWARM_WORK_DIR/bin:$PATH"
+        # shellcheck disable=SC1091 # written by the setup step
+        [ ! -f "$SWARM_WORK_DIR/env" ] || . "$SWARM_WORK_DIR/env"
+
+        compose_file=${INPUT_COMPOSE_FILE:-compose.yaml}
+        keep=${INPUT_KEEP_IMAGES:-}
+
+        echo "::group::Clean up old images"
+        # IDs of images that existing containers use are never removed.
+        containers=$(docker ps -a --format '{{.Image}}') || fail "cannot list containers"
+        used=" "
+        while IFS= read -r ref; do
+          [ -n "$ref" ] || continue
+          id=$(docker image inspect --format '{{.Id}}' "$ref") || fail "cannot inspect image '$ref'"
+          used="$used$id "
+        done <<EOF
+        $containers
+        EOF
+
+        compose_images=$(docker compose -f "$compose_file" config --images) ||
+          fail "cannot list images of '$compose_file'"
+        repos=" "
+        while IFS= read -r image; do
+          [ -n "$image" ] || continue
+          image=${image%%@*}
+          case ${image##*/} in
+          *:*) image=${image%:*} ;;
+          esac
+          repos="$repos$image "
+        done <<EOF
+        $compose_images
+        EOF
+
+        removed=0
+        for repo in $(printf '%s\n' "$repos" | tr ' ' '\n' | sort -u | sed '/^$/d'); do
+          echo "::debug::repository: $repo"
+          listing=$(docker image ls "$repo" --no-trunc --format '{{.ID}} {{.Repository}}:{{.Tag}}') ||
+            fail "cannot list images of '$repo'"
+          kept=" "
+          count=0
+          while read -r id ref; do
+            case $kept in
+            *" $id "*) ;;
+            *)
+              if [ "$count" -lt "$keep" ]; then
+                kept="$kept$id "
+                count=$((count + 1))
+              fi
+              ;;
+            esac
+            case $kept$used in
+            *" $id "*) continue ;;
+            esac
+            case $ref in
+            *:'<none>') ref=$id ;;
+            esac
+            printf 'Removing %s\n' "$ref"
+            docker image rm "$ref" || fail "cannot remove image '$ref'"
+            removed=$((removed + 1))
+          done <<EOF
+        $listing
+        EOF
+        done
+
+        docker image prune -f || fail "cannot prune dangling images"
+        echo "::endgroup::"
+        echo "::notice::Removed $removed old image(s); kept the newest $keep per repository"
+      env:
+        DOCKER_CONTEXT: ${{ steps.setup.outputs.context }}
+        SWARM_WORK_DIR: ${{ steps.setup.outputs.work-dir }}
+        INPUT_COMPOSE_FILE: ${{ inputs.compose-file }}
+        INPUT_ENV_FILE: ${{ inputs.env-file }}
+        INPUT_KEEP_IMAGES: ${{ inputs.keep-images }}
+    - id: logout
+      if: always() && steps.login.outcome == 'success'
+      shell: sh
+      run: |
+        set -eu
+        fail() {
+          echo "::error::$*"
+          exit 1
+        }
+        [ -n "${DOCKER_CONTEXT:-}" ] || fail "DOCKER_CONTEXT is not set"
+        export PATH="$SWARM_WORK_DIR/bin:$PATH"
+
+        registry=${INPUT_REGISTRY:-}
+
+        echo "::group::Log out of ${registry:-Docker Hub}"
+        docker logout ${registry:+"$registry"} ||
+          fail "cannot log out of ${registry:-Docker Hub}"
+        echo "::endgroup::"
+      env:
+        DOCKER_CONTEXT: ${{ steps.setup.outputs.context }}
+        SWARM_WORK_DIR: ${{ steps.setup.outputs.work-dir }}
+        INPUT_REGISTRY: ${{ inputs.registry }}
+    - id: teardown
+      if: always()
+      shell: sh
+      run: |
+        set -eu
+        context=${SWARM_CONTEXT:-}
+        work_dir=${SWARM_WORK_DIR:-}
+        status=0
+
+        echo "::group::Tear down"
+        if [ -n "$context" ]; then
+          docker context rm -f "$context" || {
+            echo "::error::cannot remove Docker context '$context'"
+            status=1
+          }
+        fi
+        if [ -n "$work_dir" ]; then
+          case $work_dir in
+          "$RUNNER_TEMP"/deploy-swarm.*)
+            rm -rf "$work_dir" || {
+              echo "::error::cannot remove '$work_dir'"
+              status=1
+            }
+            ;;
+          *)
+            echo "::error::refusing to remove '$work_dir': not a deploy-swarm run directory"
+            status=1
+            ;;
+          esac
+        fi
+        echo "::endgroup::"
+        exit "$status"
+      env:
+        SWARM_CONTEXT: ${{ steps.setup.outputs.context }}
+        SWARM_WORK_DIR: ${{ steps.setup.outputs.work-dir }}
