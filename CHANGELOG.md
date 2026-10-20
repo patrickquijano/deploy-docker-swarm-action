@@ -7,6 +7,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-10-20
+
+### Added
+
+- Security policy (`SECURITY.md`): only the latest release line (`v0`) gets fixes, and vulnerabilities are reported privately through GitHub private vulnerability reporting.
+
+### Fixed
+
+- Report `cannot reach the Docker host` when the manager cannot be reached, for example after a wrong `ssh-known-hosts`, instead of the misleading `the Docker host is not a Swarm manager node`.
+
 ## [0.1.1] - 2026-10-20
 
 ### Changed
@@ -28,6 +38,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Teardown that always removes the temporary Docker context and the per-run directory.
 - MIT license.
 
-[unreleased]: https://github.com/patrickquijano/deploy-docker-swarm-action/compare/v0.1.1...HEAD
+[unreleased]: https://github.com/patrickquijano/deploy-docker-swarm-action/compare/v0.2.0...HEAD
+[0.2.0]: https://github.com/patrickquijano/deploy-docker-swarm-action/compare/v0.1.1...v0.2.0
 [0.1.1]: https://github.com/patrickquijano/deploy-docker-swarm-action/compare/v0.1.0...v0.1.1
 [0.1.0]: https://github.com/patrickquijano/deploy-docker-swarm-action/releases/tag/v0.1.0
