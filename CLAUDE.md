@@ -32,6 +32,8 @@ Later steps trust `setup` and keep only their docker calls. Each defines at most
 - `shfmt -d tests`: check shell formatting.
 - `yamllint --strict action.yaml .github tests/fixtures`: lint YAML (config in `.yamllint.yaml`, aligned with the repo formatter).
 - `bats tests/`: run the release-step and setup-step tests (install with `brew install bats-core`).
+- `npx prettier --check "*.md" ".claude/**/*.md" .github/*.md`: check Markdown formatting (config in `.prettierrc.json`).
+- `npx markdownlint-cli2 "*.md" ".claude/**/*.md" ".github/*.md"`: lint Markdown (config in `.markdownlint-cli2.jsonc`).
 - `act pull_request -W .github/workflows/ci.yaml -j lint`: run the lint job locally. On Colima or another Docker context, prefix `DOCKER_HOST="$(docker context inspect -f '{{.Endpoints.docker.Host}}')"`.
 
 ## Precedence
@@ -39,7 +41,7 @@ Later steps trust `setup` and keep only their docker calls. Each defines at most
 - Order: user request > path-scoped rule > this file > unconditional rules > skill defaults.
 - On a conflict, ask.
 - Trade-offs: correctness > security > clarity > simplicity > maintainability > testability > performance.
-- `.claude/rules/commits.md` beats the session commit-attribution trailer: commits are subject-only, no `Claude-Session:` line.
+- `.claude/rules/commits.md` beats the session commit-attribution trailer: no `Claude-Session:` line.
 
 ## Boundaries
 
@@ -54,7 +56,7 @@ Ask first:
 - Create or move tags, including `v1`.
 - Publish a GitHub release or Marketplace listing.
 - Rewrite history.
-- Run `act` jobs that call `docker swarm init`; `act` mounts the host Docker socket.
+- Run `act` jobs that call `docker swarm init`, or re-enable the host Docker socket that `.actrc` turns off.
 
 ## Changes
 
@@ -63,7 +65,7 @@ Ask first:
 
 ## Definition of done
 
-- `actionlint`, `shellcheck tests/*.bats tests/helpers.bash`, `shfmt -d tests`, `yamllint --strict action.yaml .github tests/fixtures`, `bats tests/` and the commit-msg hook all pass.
+- `actionlint`, `shellcheck tests/*.bats tests/helpers.bash`, `shfmt -d tests`, `yamllint --strict action.yaml .github tests/fixtures`, `bats tests/`, the Markdown format and lint commands for any Markdown you changed, and the commit-msg hook all pass.
 - The CI `ci.yaml` job is green on the PR.
 
 ## Maintenance
