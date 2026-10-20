@@ -99,7 +99,7 @@ The action runs these composite steps in order. Each step's logic is inline in [
 | `login`          | Log in to the registry with the password on stdin. Runs only when a username is set.            |
 | `deploy`         | Run `docker stack deploy`, optionally for a service subset and with `--prune`.                  |
 | `cleanup-images` | Keep the newest `keep-images` images per repository. Runs only when `keep-images` is non-empty. |
-| `logout`         | Log out of the registry. Runs even when an earlier step fails.                                  |
+| `logout`         | Log out of the registry. Runs even when a later step fails, but only after a successful login.  |
 | `teardown`       | Remove the Docker context and the per-run directory. Always runs.                               |
 
 ### Workflows and tests
@@ -148,7 +148,7 @@ The action has no outputs.
 - SSH state lives in a per-run directory under `$RUNNER_TEMP` with an `ssh` shim that uses its own config. `~/.ssh` is never touched.
 - The deploy is always detached (`--detach=true`) and uses `--with-registry-auth`. Deploys are idempotent.
 - With `services`, the action renders `docker compose config <services>` and pipes it to `docker stack deploy -c -`.
-- Logout and teardown run even when an earlier step fails, and never hide the original failure.
+- Teardown always runs, and logout runs whenever login succeeded, even when a later step fails. Neither hides the original failure.
 
 ### Image cleanup
 
